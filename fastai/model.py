@@ -61,6 +61,12 @@ class Stepper():
         if self.clip:   # Gradient clipping
             if IS_TORCH_04: nn.utils.clip_grad_norm_(trainable_params_(self.m), self.clip)
             else: nn.utils.clip_grad_norm(trainable_params_(self.m), self.clip)
+        if 'wd' in self.opt.param_groups and self.opt.param_groups['wd'] != 0: 
+            #Weight decay out of the loss. After the gradient computation but before the step.
+            for group in self.opt.param_groups:
+                lr, wd = group['lr'], group['wd']
+                for p in group['params']:
+                    if p.grad is not None: p.data = p.data.add(-wd * lr, p.data)
         self.opt.step()
         if self.fp16: 
             copy_fp32_to_model(self.m, self.fp32_params)
@@ -221,7 +227,7 @@ def get_prediction(x):
 
 def predict(m, dl):
     preda,_ = predict_with_targs_(m, dl)
-    return to_np(torch.cat(preda))
+    return np.concatenate(preda)
 
 def predict_batch(m, x):
     m.eval()
@@ -232,12 +238,12 @@ def predict_with_targs_(m, dl):
     m.eval()
     if hasattr(m, 'reset'): m.reset()
     res = []
-    for *x,y in iter(dl): res.append([get_prediction(m(*VV(x))),y])
+    for *x,y in iter(dl): res.append([get_prediction(to_np(m(*VV(x)))),to_np(y)])
     return zip(*res)
 
 def predict_with_targs(m, dl):
     preda,targa = predict_with_targs_(m, dl)
-    return to_np(torch.cat(preda)), to_np(torch.cat(targa))
+    return np.concatenate(preda), np.concatenate(targa)
 
 # From https://github.com/ncullen93/torchsample
 def model_summary(m, input_size):
